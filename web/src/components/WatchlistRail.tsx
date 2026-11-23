@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { api, type Instrument, type Quote, type Watchlist } from "../lib/api";
-import { direction, percent, price } from "../lib/format";
+import { direction, percent } from "../lib/format";
 import { StatusBadge } from "./FeedHealth";
+import { LivePrice } from "./LivePrice";
 import type { FeedStatus } from "./Terminal";
 
 interface Props {
@@ -103,7 +104,7 @@ export function WatchlistRail({ instruments, selected, onSelect, onSearch, quote
             >
               <button className="rail-item" aria-current={instrument.id === selected ? "true" : undefined} onClick={() => onSelect(instrument.id)}>
                 <span className="rail-symbol">{instrument.symbol}</span>
-                <span className="rail-price num">{price(instrument.id, quote?.last)}</span>
+                <LivePrice id={instrument.id} quote={quote} className="rail-price num" />
                 <span className="rail-name">{status === "live" ? instrument.name : <StatusBadge status={status ?? "waiting"} />}</span>
                 <span className={`rail-change num ${direction(quote?.change_pct_24h)}`}>{percent(quote?.change_pct_24h)}</span>
               </button>

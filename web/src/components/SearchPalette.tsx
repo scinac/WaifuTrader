@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, type Instrument, type Quote, type Watchlist } from "../lib/api";
-import { direction, percent, price } from "../lib/format";
+import { direction, midPrice, percent } from "../lib/format";
 
 interface Props {
   open: boolean;
@@ -76,7 +76,7 @@ export function SearchPalette({ open, onClose, instruments, quotes, watchlist, o
               <button className="palette-pick" onClick={() => choose(instrument.id)}>
                 <strong>{instrument.symbol}</strong>
                 <span className="dim">{instrument.name}</span>
-                <span className="num">{price(instrument.id, quote?.last)}</span>
+                <span className="num">{midPrice(instrument.id, quote)}</span>
                 <span className={`num ${direction(quote?.change_pct_24h)}`}>{percent(quote?.change_pct_24h)}</span>
               </button>
               {watchlist && (

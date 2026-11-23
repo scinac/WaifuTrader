@@ -18,6 +18,28 @@ export function price(id: string, value: string | null | undefined) {
   return formatDecimal(value, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+const decimalPlaces = (value: string) => value.split(".")[1]?.length ?? 0;
+
+/** Exact midpoint of bid and ask, computed on decimal strings so it never picks up float error. */
+export function midValue(quote?: { bid: string | null; ask: string | null } | null) {
+  if (quote?.bid == null || quote.ask == null) return null;
+  const places = Math.max(decimalPlaces(quote.bid), decimalPlaces(quote.ask));
+  const scaled = (value: string) => {
+    const [whole, fraction = ""] = value.split(".");
+    return BigInt(whole + fraction.padEnd(places, "0"));
+  };
+  const digits = ((scaled(quote.bid) + scaled(quote.ask)) * 5n).toString().padStart(places + 2, "0");
+  return `${digits.slice(0, -(places + 1))}.${digits.slice(-(places + 1))}`;
+}
+
+/** Mid price with one extra decimal, because a midpoint can fall between two ticks. */
+export function midPrice(id: string, quote?: { bid: string | null; ask: string | null; last: string | null } | null) {
+  const value = midValue(quote) ?? quote?.last;
+  if (value == null) return "n/a";
+  const digits = priceDecimals(id) + 1;
+  return formatDecimal(value, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
 export function quantity(value: string | null | undefined, digits = 2) {
   if (value == null) return "n/a";
   return formatDecimal(value, { minimumFractionDigits: digits, maximumFractionDigits: digits });
