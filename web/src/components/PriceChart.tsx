@@ -144,7 +144,7 @@ export function PriceChart({ instrumentId, interval, indicators, tool, onToolDon
       timezone: VIENNA,
       locale: "en-US",
       styles: chartStyles(),
-      decimalFold: { threshold: Number.MAX_SAFE_INTEGER }, // show 0.0001, not 0.0{3}1
+      decimalFold: { threshold: 32 }, // show 0.0001, not 0.0{3}1
     });
     if (!instance) return;
     chart.current = instance;
