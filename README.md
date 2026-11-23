@@ -46,6 +46,20 @@ curl -X POST localhost:8000/api/v1/auth/login -H 'content-type: application/json
 
 API docs: http://localhost:8000/docs
 
+## Run the web app (dev)
+
+With the backend running on port 8000:
+
+```bash
+cd web
+pnpm install
+pnpm dev
+```
+
+Open http://127.0.0.1:5173 and sign in. The market view has live BTC/EUR and ETH/EUR quotes,
+candlestick charts from 1m to 1W, and a feed health panel. Trading screens arrive with phase 2.
+The Docker stack does not serve the web app yet.
+
 ## Run on the Raspberry Pi
 
 ```bash
