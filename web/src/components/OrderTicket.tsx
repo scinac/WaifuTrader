@@ -167,16 +167,16 @@ export function OrderTicket({ instrument, quote, handle }: Props) {
         </select>
       </label>
 
-      <label>
-        Size
+      <div className="field">
+        <label htmlFor="ticket-size">Size</label>
         <span className="field-group">
-          <input ref={sizeInput} inputMode="decimal" value={size} onChange={(e) => setSize(e.target.value)} placeholder="0.00" autoComplete="off" />
+          <input id="ticket-size" ref={sizeInput} inputMode="decimal" value={size} onChange={(e) => setSize(e.target.value)} placeholder="0.00" autoComplete="off" />
           <select aria-label="Size unit" value={unit} onChange={(e) => { setUnit(e.target.value as "base" | "eur"); setSize(""); }}>
             <option value="base">{base}</option>
             <option value="eur">EUR</option>
           </select>
         </span>
-      </label>
+      </div>
 
       {(type === "stop" || type === "stop_limit") && (
         <label>Stop price<input inputMode="decimal" value={stop} onChange={(e) => setStop(e.target.value)} autoComplete="off" /></label>
@@ -188,16 +188,16 @@ export function OrderTicket({ instrument, quote, handle }: Props) {
         <label>Target price<input inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} autoComplete="off" /></label>
       )}
       {type === "trailing_stop" && (
-        <label>
-          Trail
+        <div className="field">
+          <label htmlFor="ticket-trail">Trail</label>
           <span className="field-group">
-            <input inputMode="decimal" value={trail} onChange={(e) => setTrail(e.target.value)} autoComplete="off" />
+            <input id="ticket-trail" inputMode="decimal" value={trail} onChange={(e) => setTrail(e.target.value)} autoComplete="off" />
             <select aria-label="Trail unit" value={trailUnit} onChange={(e) => setTrailUnit(e.target.value as "pct" | "eur")}>
               <option value="pct">%</option>
               <option value="eur">EUR</option>
             </select>
           </span>
-        </label>
+        </div>
       )}
       <dl className="rows ticket-preview" aria-live="polite">
         <div><dt>Est. price</dt><dd>{price(id, current?.estimated_price ?? reference)}</dd></div>

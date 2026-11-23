@@ -288,6 +288,7 @@ input.code { font-size: 16px; letter-spacing: .24em; font-variant-numeric: tabul
 .ticket h2 { font-size: 14px; font-weight: 650; }
 .ticket label, .settings label, .confirm label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
 .ticket label > input, .ticket label > select { width: 100%; font-size: 13px; color: var(--text); }
+.ticket .field { display: grid; gap: 4px; }
 .field-group { display: flex; }
 .field-group input { flex: 1; min-width: 0; border-radius: 4px 0 0 4px; font-variant-numeric: tabular-nums; }
 .field-group select { flex: none; width: 76px; margin-left: -1px; border-radius: 0 4px 4px 0; }
