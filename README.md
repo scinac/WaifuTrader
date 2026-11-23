@@ -4,7 +4,19 @@ Self-hosted trading terminal for a few users: stocks/ETFs via Interactive Broker
 Kraken, manual trading, bots and predictions. The full specification is the FSD:
 https://claude.ai/artifact/STBGAtAvkaLwmuTyTFszqY
 
-## Status: phase 1 (Foundation)
+## Status: phase 2 in progress (paper trading)
+
+Working now, on paper accounts only:
+
+- Order manager with market, limit, stop, stop-limit, take-profit and trailing-stop orders
+- Risk limits (daily loss, position size, order rate), kill switch and duplicate protection
+- Web app with order ticket, positions, orders, fills, portfolio, risk settings and feed health
+- Watchlists, Ctrl+K search, B/S hotkeys, chart indicators, saved drawings and trade marks
+
+Not built yet: bracket/OCO orders, order modification, trading from the chart, market overview,
+screener, news and fundamentals, the `trade` CLI, and real-money trading.
+
+### Phase 1 (Foundation)
 
 | Built | Where |
 | --- | --- |
@@ -33,7 +45,7 @@ Deviations from the FSD to review:
 cd backend
 pip install -e ".[dev]"
 export TT_MASTER_KEY=$(python -m tt.cli gen-master-key) TT_COOKIE_SECURE=false
-alembic upgrade head
+alembic upgrade head          # also run this after pulling new migrations
 python -m tt.cli create-admin you          # prints a TOTP URI: add it to your authenticator
 uvicorn tt.main:app --reload
 # confirm 2FA once:
