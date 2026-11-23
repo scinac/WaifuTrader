@@ -1,8 +1,8 @@
-import { dispose, init, type Chart, type DataLoader, type KLineData, type OverlayEvent } from "klinecharts";
+import { dispose, init, registerOverlay, type Chart, type DataLoader, type KLineData, type OverlayEvent } from "klinecharts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type FillRow, type Interval, type Order, type SavedDrawing } from "../lib/api";
 import { bucketStart, INTERVALS, LiveBar, PERIODS, toBar } from "../lib/bars";
-import { priceDecimals } from "../lib/format";
+import { midValue, priceDecimals } from "../lib/format";
 import { onCandle, useLive } from "../lib/live";
 
 export const INDICATORS = [
@@ -20,6 +20,32 @@ export const DRAWING_TOOLS = [
   { name: "fibonacciLine", label: "Fib" },
 ];
 
+// The live mid price: a line across the chart with a tag on the price axis.
+registerOverlay({
+  name: "midPriceLine",
+  totalStep: 2,
+  needDefaultPointFigure: false,
+  needDefaultXAxisFigure: false,
+  needDefaultYAxisFigure: false,
+  createPointFigures: ({ coordinates, bounding, overlay }) => ({
+    type: "line",
+    ignoreEvent: true,
+    attrs: { coordinates: [{ x: 0, y: coordinates[0].y }, { x: bounding.width, y: coordinates[0].y }] },
+    styles: { style: "dashed", dashedValue: [3, 3], size: 1, color: (overlay.extendData as { color: string }).color },
+  }),
+  createYAxisFigures: ({ coordinates, bounding, overlay, yAxis }) => {
+    const { color, ink, family, text } = overlay.extendData as { color: string; ink: string; family: string; text: string };
+    const fromZero = yAxis?.isFromZero() ?? false;
+    return {
+      type: "text",
+      ignoreEvent: true,
+      attrs: { x: fromZero ? 0 : bounding.width, y: coordinates[0].y, text, align: fromZero ? "left" : "right", baseline: "middle" },
+      styles: { style: "fill", color: ink, backgroundColor: color, size: 11, family, weight: 600, paddingLeft: 4, paddingRight: 4, paddingTop: 3, paddingBottom: 3, borderRadius: 2 },
+    };
+  },
+});
+
+const MID_LINE = "mid-line";
 const CANDLE_PANE = "candle_pane";
 const DRAWINGS = "drawings";
 const TRADE_MARKS = "trade-marks";
@@ -57,10 +83,7 @@ function chartStyles() {
       priceMark: {
         high: { color: muted, textFamily: family },
         low: { color: muted, textFamily: family },
-        last: {
-          upColor: up, downColor: down, noChangeColor: flat,
-          text: { color: token("ground"), family },
-        },
+        last: { show: false }, // the live mid line marks the current price
       },
       tooltip: {
         title: { show: false },
@@ -106,6 +129,9 @@ export function PriceChart({ instrumentId, interval, indicators, tool, onToolDon
   const epoch = useLive((s) => s.epoch);
   const activeIndicators = useRef<Map<string, string>>(new Map());
   const drawingsFor = useRef<string | null>(null);
+  const midLine = useRef<string | null>(null);
+  const quote = useLive((s) => s.quotes[instrumentId]);
+  const mid = midValue(quote);
   const toolDone = useRef(onToolDone);
   toolDone.current = onToolDone;
 
@@ -221,6 +247,7 @@ export function PriceChart({ instrumentId, interval, indicators, tool, onToolDon
       dispose(element);
       chart.current = null;
       activeIndicators.current.clear();
+      midLine.current = null;
     };
   }, []);
 
@@ -296,6 +323,34 @@ export function PriceChart({ instrumentId, interval, indicators, tool, onToolDon
     chart.current.removeOverlay({ groupId: DRAWINGS });
     saveDrawings();
   }, [clearDrawings, saveDrawings]);
+
+  // Moves between trades too, because candles only change when something actually trades.
+  useEffect(() => {
+    const instance = chart.current;
+    if (!instance) return;
+    const anchor = instance.getDataList().at(-1)?.timestamp;
+    if (state !== "ready" || mid == null || anchor === undefined) {
+      instance.removeOverlay({ groupId: MID_LINE });
+      midLine.current = null;
+      return;
+    }
+    const css = getComputedStyle(document.documentElement);
+    const digits = priceDecimals(instrumentId) + 1;
+    const extendData = {
+      color: css.getPropertyValue("--accent").trim(),
+      ink: css.getPropertyValue("--ground").trim(),
+      family: css.getPropertyValue("--font").trim(),
+      text: new Intl.NumberFormat("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(mid as unknown as number),
+    };
+    const points = [{ timestamp: anchor, value: Number(mid) }];
+    if (midLine.current) {
+      instance.overrideOverlay({ id: midLine.current, points, extendData });
+    } else {
+      midLine.current = instance.createOverlay({
+        name: "midPriceLine", groupId: MID_LINE, lock: true, zLevel: 10, points, extendData,
+      }) as string | null;
+    }
+  }, [mid, state, instrumentId]);
 
   // Open orders are horizontal lines; fills are labelled marks on their candle.
   useEffect(() => {
