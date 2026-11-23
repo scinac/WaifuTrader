@@ -52,8 +52,8 @@ export function FeedHealth({ user, instruments, statuses, now }: Props) {
   const feed = health.data?.marketdata.enabled ? health.data.marketdata : null;
 
   return (
-    <aside className="health" aria-label="Feed health">
-      <h2>Feed health</h2>
+    <section className="health" aria-label="Feed health">
+      <h1>Feed health</h1>
 
       <dl className="rows">
         <div>
@@ -145,6 +145,6 @@ export function FeedHealth({ user, instruments, statuses, now }: Props) {
           </ol>
         )}
       </section>
-    </aside>
+    </section>
   );
 }
