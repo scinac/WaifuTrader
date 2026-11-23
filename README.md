@@ -58,7 +58,6 @@ pnpm dev
 
 Open http://127.0.0.1:5173 and sign in. The market view has live BTC/EUR and ETH/EUR quotes,
 candlestick charts from 1m to 1W, and a feed health panel. Trading screens arrive with phase 2.
-The Docker stack does not serve the web app yet.
 
 ## Run on the Raspberry Pi
 
@@ -69,6 +68,9 @@ docker compose --env-file .env up -d --build
 docker compose exec backend python -m tt.cli create-admin you
 sudo tailscale serve --bg 8000   # HTTPS inside your tailnet only
 ```
+
+Port 8000 on the Pi is the web container, which serves the app and proxies `/api` and `/ws` to the
+backend. Keep `POSTGRES_PASSWORD` to letters and digits, because it is embedded in the database URL.
 
 Invite friends: `POST /api/v1/admin/invites` → send them the token → they call
 `POST /api/v1/auth/register`, add the returned TOTP URI to their app, then `POST /api/v1/auth/totp/setup`.
