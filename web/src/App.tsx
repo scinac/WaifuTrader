@@ -6,15 +6,16 @@ import { api, ApiFailure, type User } from "./lib/api";
 
 export function App() {
   const client = useQueryClient();
-  const me = useQuery({ queryKey: ["me"], queryFn: api.me });
+  const me = useQuery<User | null>({ queryKey: ["me"], queryFn: api.me });
 
   const signedIn = useCallback((user: User) => client.setQueryData(["me"], user), [client]);
   const signedOut = useCallback(() => {
-    client.clear();
-    void client.fetchQuery({ queryKey: ["me"], queryFn: api.me }).catch(() => undefined);
+    client.removeQueries({ predicate: (query) => query.queryKey[0] !== "me" });
+    client.setQueryData(["me"], null);
   }, [client]);
 
   if (me.data) return <Terminal user={me.data} onSignedOut={signedOut} />;
+  if (me.data === null) return <Login onSignedIn={signedIn} />;
   if (me.isPending) return <main className="center" aria-busy="true" />;
   if (me.error instanceof ApiFailure && me.error.status === 401) return <Login onSignedIn={signedIn} />;
 
