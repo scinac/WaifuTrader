@@ -24,11 +24,27 @@ services:
       TT_DATABASE_URL: postgresql+asyncpg://tt:${POSTGRES_PASSWORD}@db:5432/tt
       TT_MASTER_KEY: ${TT_MASTER_KEY:?set TT_MASTER_KEY in .env}
       TT_COOKIE_SECURE: ${TT_COOKIE_SECURE:-true}
-    # Bound to localhost: reach it through Tailscale (`tailscale serve`), never a public port.
-    ports:
-      - "127.0.0.1:8000:8000"
+      # Only the web container can reach the backend, and it sets this header itself.
+      FORWARDED_ALLOW_IPS: "*"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      start_period: 30s
+      retries: 6
+
+  web:
+    build: ../web
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    # Bound to localhost: reach it through Tailscale (`tailscale serve`), never a public port.
+    ports:
+      - "127.0.0.1:${TT_WEB_PORT:-8000}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
       interval: 30s
       retries: 3
 
