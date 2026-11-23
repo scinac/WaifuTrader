@@ -122,9 +122,11 @@ class KrakenAdapter(BrokerAdapter):
             try:
                 async with websockets.connect(self._ws_url, ping_interval=20, ping_timeout=20,
                                               max_size=2**22) as ws:
-                    for channel in ("ticker", "trade"):
+                    # Ticker on best bid/offer changes: the default (trades only) goes quiet
+                    # for longer than the stale limit in a healthy market.
+                    for params in ({"channel": "ticker", "event_trigger": "bbo"}, {"channel": "trade"}):
                         await ws.send(json.dumps({"method": "subscribe",
-                                                  "params": {"channel": channel, "symbol": symbols}}))
+                                                  "params": {**params, "symbol": symbols}}))
                     attempt = 0
                     yield ConnectionEvent(BROKER, "connected", datetime.now(timezone.utc))
                     async for raw in ws:
