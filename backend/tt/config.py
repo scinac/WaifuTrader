@@ -29,7 +29,8 @@ class Settings(BaseSettings):
 
     # Market data
     marketdata_enabled: bool = True
-    tracked_symbols: list[str] = ["kraken:BTC/EUR", "kraken:ETH/EUR"]
+    tracked_symbols: list[str] = ["kraken:BTC/EUR", "kraken:ETH/EUR", "kraken:SOL/EUR",
+                                  "kraken:XRP/EUR", "kraken:LINK/EUR"]
     stale_after_seconds_crypto: int = 10
     candle_publish_interval_ms: int = 250
     backfill_on_start_minutes: int = 720  # Kraken OHLC returns at most 720 bars

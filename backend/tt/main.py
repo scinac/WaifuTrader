@@ -26,6 +26,9 @@ log = logging.getLogger("tt")
 KNOWN_INSTRUMENTS = {
     "kraken:BTC/EUR": dict(name="Bitcoin / Euro", currency="EUR", asset_class="crypto"),
     "kraken:ETH/EUR": dict(name="Ethereum / Euro", currency="EUR", asset_class="crypto"),
+    "kraken:SOL/EUR": dict(name="Solana / Euro", currency="EUR", asset_class="crypto"),
+    "kraken:XRP/EUR": dict(name="XRP / Euro", currency="EUR", asset_class="crypto"),
+    "kraken:LINK/EUR": dict(name="Chainlink / Euro", currency="EUR", asset_class="crypto"),
 }
 
 
