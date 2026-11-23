@@ -103,6 +103,7 @@ async def live(ws: WebSocket):
     md = getattr(app.state, "marketdata", None)
     sub = hub.subscribe()
     sub.add("alerts")
+    sub.add(f"orders:{user.id}")
 
     async def sender():
         while True:

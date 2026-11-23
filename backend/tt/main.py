@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from tt.adapters.base import BrokerAdapter, split_instrument_id
 from tt.api import admin, auth, market
+from tt.api import trading as trading_api
 from tt.config import Settings, get_settings
 from tt.core.errors import install_error_handlers
 from tt.core.security import Vault
@@ -17,6 +18,7 @@ from tt.db.models import Instrument
 from tt.db.session import Database
 from tt.marketdata.hub import Hub
 from tt.marketdata.service import MarketDataService
+from tt.trading.engine import TradingEngine
 
 log = logging.getLogger("tt")
 
@@ -58,6 +60,10 @@ def create_app(settings: Settings | None = None,
         if settings.auto_create_schema:
             await db.create_all()
         await seed_instruments(db, settings.tracked_symbols)
+        trading = TradingEngine(db.sessionmaker, app.state.hub, settings.paper_starting_cash,
+                                settings.paper_fee_rate, settings.stale_after_seconds_crypto)
+        await trading.start()
+        app.state.trading = trading
         app.state.marketdata = None
         adapters: list[BrokerAdapter] = []
         if settings.marketdata_enabled:
@@ -72,6 +78,7 @@ def create_app(settings: Settings | None = None,
                 candle_publish_interval_ms=settings.candle_publish_interval_ms,
                 backfill_minutes=settings.backfill_on_start_minutes,
             )
+            md.quote_listeners.append(trading.on_quote)
             app.state.marketdata = md
             await md.start()
         try:
@@ -94,6 +101,7 @@ def create_app(settings: Settings | None = None,
     api.include_router(auth.me_router)
     api.include_router(admin.router)
     api.include_router(market.router)
+    api.include_router(trading_api.router)
     app.include_router(api)
     app.include_router(market.ws_router)
 
