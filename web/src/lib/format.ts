@@ -1,6 +1,9 @@
 const PRICE_DECIMALS: Record<string, number> = {
   "kraken:BTC/EUR": 1,
   "kraken:ETH/EUR": 2,
+  "kraken:SOL/EUR": 2,
+  "kraken:XRP/EUR": 5,
+  "kraken:LINK/EUR": 3,
 };
 
 export const priceDecimals = (id: string) => PRICE_DECIMALS[id] ?? 2;
@@ -27,6 +30,20 @@ export function percent(value: string | null | undefined) {
     maximumFractionDigits: 2,
     signDisplay: "exceptZero",
   })}%`;
+}
+
+export function money(value: string | null | undefined, signed = false) {
+  if (value == null) return "n/a";
+  return `${formatDecimal(value, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: signed ? "exceptZero" : "auto",
+  })} €`;
+}
+
+export function amount(value: string | null | undefined) {
+  if (value == null) return "n/a";
+  return formatDecimal(value, { maximumFractionDigits: 8 });
 }
 
 export function direction(value: string | null | undefined): "up" | "down" | "flat" {

@@ -1,10 +1,28 @@
-import { dispose, init, type Chart, type DataLoader, type KLineData } from "klinecharts";
-import { useEffect, useRef, useState } from "react";
-import { api, type Interval } from "../lib/api";
-import { INTERVALS, LiveBar, PERIODS, toBar } from "../lib/bars";
+import { dispose, init, type Chart, type DataLoader, type KLineData, type OverlayEvent } from "klinecharts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, type FillRow, type Interval, type Order, type SavedDrawing } from "../lib/api";
+import { bucketStart, INTERVALS, LiveBar, PERIODS, toBar } from "../lib/bars";
 import { priceDecimals } from "../lib/format";
 import { onCandle, useLive } from "../lib/live";
 
+export const INDICATORS = [
+  { name: "MA", label: "SMA", main: true },
+  { name: "EMA", label: "EMA", main: true },
+  { name: "BOLL", label: "Bollinger", main: true },
+  { name: "AVP", label: "Avg price", main: true },
+  { name: "RSI", label: "RSI", main: false },
+  { name: "MACD", label: "MACD", main: false },
+];
+
+export const DRAWING_TOOLS = [
+  { name: "segment", label: "Trend" },
+  { name: "horizontalStraightLine", label: "Level" },
+  { name: "fibonacciLine", label: "Fib" },
+];
+
+const CANDLE_PANE = "candle_pane";
+const DRAWINGS = "drawings";
+const TRADE_MARKS = "trade-marks";
 const PAGE_SIZE = 500;
 const VIENNA = "Europe/Vienna";
 
@@ -70,11 +88,55 @@ function chartStyles() {
 const intervalOf = (period: { type: string; span: number }) =>
   INTERVALS.find((i) => PERIODS[i].type === period.type && PERIODS[i].span === period.span) ?? "1m";
 
-export function PriceChart({ instrumentId, interval }: { instrumentId: string; interval: Interval }) {
+interface Props {
+  instrumentId: string;
+  interval: Interval;
+  indicators: string[];
+  tool: string | null;
+  onToolDone: () => void;
+  clearDrawings: number;
+  orders: Order[];
+  fills: FillRow[];
+}
+
+export function PriceChart({ instrumentId, interval, indicators, tool, onToolDone, clearDrawings, orders, fills }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const chart = useRef<Chart | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const epoch = useLive((s) => s.epoch);
+  const activeIndicators = useRef<Map<string, string>>(new Map());
+  const drawingsFor = useRef<string | null>(null);
+  const toolDone = useRef(onToolDone);
+  toolDone.current = onToolDone;
+
+  const saveDrawings = useCallback(() => {
+    const instance = chart.current;
+    const id = drawingsFor.current;
+    if (!instance || !id) return;
+    const items: SavedDrawing[] = instance.getOverlays({ groupId: DRAWINGS }).map((overlay) => ({
+      name: overlay.name,
+      points: overlay.points.map((p) => ({ timestamp: p.timestamp, value: p.value })),
+    }));
+    void api.saveDrawings(id, items).catch(() => undefined);
+  }, []);
+
+  const drawingEvents = useCallback(() => ({
+    groupId: DRAWINGS,
+    onDrawEnd: () => {
+      saveDrawings();
+      toolDone.current();
+      return false;
+    },
+    onPressedMoveEnd: () => {
+      saveDrawings();
+      return false;
+    },
+    onRightClick: (event: OverlayEvent<unknown>) => {
+      chart.current?.removeOverlay({ id: event.overlay.id });
+      saveDrawings();
+      return true;
+    },
+  }), [saveDrawings]);
 
   useEffect(() => {
     const element = host.current!;
@@ -153,6 +215,7 @@ export function PriceChart({ instrumentId, interval }: { instrumentId: string; i
       stopLive?.();
       dispose(element);
       chart.current = null;
+      activeIndicators.current.clear();
     };
   }, []);
 
@@ -175,6 +238,100 @@ export function PriceChart({ instrumentId, interval }: { instrumentId: string; i
   useEffect(() => {
     if (epoch > 0) chart.current?.resetData();
   }, [epoch]);
+
+  useEffect(() => {
+    const instance = chart.current;
+    if (!instance) return;
+    const active = activeIndicators.current;
+    for (const name of [...active.keys()]) {
+      if (!indicators.includes(name)) {
+        instance.removeIndicator({ id: active.get(name) });
+        active.delete(name);
+      }
+    }
+    for (const item of INDICATORS) {
+      if (!indicators.includes(item.name) || active.has(item.name)) continue;
+      const id = item.main
+        ? instance.createIndicator({ name: item.name, paneId: CANDLE_PANE }, true)
+        : instance.createIndicator(item.name);
+      if (id) active.set(item.name, id);
+    }
+  }, [indicators]);
+
+  // Saved drawings belong to one instrument and are stored by time and price.
+  useEffect(() => {
+    let cancelled = false;
+    drawingsFor.current = null;
+    chart.current?.removeOverlay({ groupId: DRAWINGS });
+    if (state !== "ready") return;
+    api.drawings(instrumentId).then((items) => {
+      if (cancelled || !chart.current) return;
+      drawingsFor.current = instrumentId;
+      for (const item of items) {
+        chart.current.createOverlay({ name: item.name, points: item.points, ...drawingEvents() });
+      }
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [instrumentId, state === "ready", drawingEvents]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!tool || !chart.current) return;
+    drawingsFor.current ??= instrumentId;
+    const id = chart.current.createOverlay({ name: tool, ...drawingEvents() }) as string | null;
+    return () => {
+      const overlay = id ? chart.current?.getOverlays({ id })[0] : undefined;
+      if (overlay && overlay.currentStep !== -1) chart.current?.removeOverlay({ id: id! });
+    };
+  }, [tool, instrumentId, drawingEvents]);
+
+  useEffect(() => {
+    if (clearDrawings === 0 || !chart.current) return;
+    chart.current.removeOverlay({ groupId: DRAWINGS });
+    saveDrawings();
+  }, [clearDrawings, saveDrawings]);
+
+  // Open orders are horizontal lines; fills are labelled marks on their candle.
+  useEffect(() => {
+    const instance = chart.current;
+    if (!instance) return;
+    instance.removeOverlay({ groupId: TRADE_MARKS });
+    if (state !== "ready") return;
+    const css = getComputedStyle(document.documentElement);
+    const up = css.getPropertyValue("--up").trim();
+    const down = css.getPropertyValue("--down").trim();
+    const anchor = instance.getDataList().at(-1)?.timestamp;
+    if (anchor === undefined) return;
+    for (const order of orders) {
+      if (order.instrument_id !== instrumentId || order.status !== "accepted") continue;
+      for (const value of [order.limit_price, order.stop_price, order.take_profit]) {
+        if (value == null) continue;
+        instance.createOverlay({
+          name: "horizontalStraightLine",
+          groupId: TRADE_MARKS,
+          lock: true,
+          points: [{ timestamp: anchor, value: Number(value) }],
+          styles: { line: { color: order.side === "buy" ? up : down, style: "dashed", dashedValue: [6, 4] } },
+        });
+      }
+    }
+    for (const fill of fills) {
+      if (fill.instrument_id !== instrumentId) continue;
+      instance.createOverlay({
+        name: "simpleAnnotation",
+        groupId: TRADE_MARKS,
+        lock: true,
+        extendData: fill.side === "buy" ? "B" : "S",
+        points: [{ timestamp: bucketStart(Date.parse(fill.filled_at), interval), value: Number(fill.price) }],
+        styles: {
+          line: { color: fill.side === "buy" ? up : down },
+          polygon: { color: fill.side === "buy" ? up : down },
+          text: { color: css.getPropertyValue("--ground").trim(), backgroundColor: fill.side === "buy" ? up : down },
+        },
+      });
+    }
+  }, [orders, fills, instrumentId, interval, state]);
 
   return (
     <div className="chart-frame" aria-busy={state === "loading"}>

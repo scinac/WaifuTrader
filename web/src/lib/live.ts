@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { api, ApiFailure, type Candle, type Quote } from "./api";
+import { api, ApiFailure, type Candle, type Order, type Quote } from "./api";
 
 export type SocketState = "connecting" | "live" | "reconnecting";
 
@@ -30,6 +30,15 @@ export function onCandle(listener: (candle: Candle) => void) {
   candleListeners.add(listener);
   return () => {
     candleListeners.delete(listener);
+  };
+}
+
+const orderListeners = new Set<(order: Order) => void>();
+
+export function onOrder(listener: (order: Order) => void) {
+  orderListeners.add(listener);
+  return () => {
+    orderListeners.delete(listener);
   };
 }
 
@@ -71,6 +80,8 @@ export function startLive(symbols: string[], onSignedOut: () => void) {
       flush ??= window.setTimeout(flushQuotes, QUOTE_FLUSH_MS);
     } else if (message.channel === "candles:1m") {
       candleListeners.forEach((listener) => listener(message.data as Candle));
+    } else if (message.channel === "orders") {
+      orderListeners.forEach((listener) => listener(message.data as Order));
     } else if (message.channel === "alerts") {
       const alert = message.data as Omit<FeedAlert, "key" | "at">;
       useLive.setState((s) => ({

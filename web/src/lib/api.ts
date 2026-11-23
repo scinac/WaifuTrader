@@ -2,6 +2,7 @@ export interface User {
   id: string;
   username: string;
   role: string;
+  settings?: { indicators?: string[] } & Record<string, unknown>;
 }
 
 export interface Instrument {
@@ -67,6 +68,111 @@ export interface Health {
   bars_1m: Record<string, { count: number; latest: string | null }>;
 }
 
+export interface Account {
+  id: string;
+  mode: string;
+  currency: string;
+  cash: string;
+  equity: string;
+  buying_power: string;
+  starting_cash: string;
+  total_pnl: string;
+  realized_pnl: string;
+  daily_pnl: string;
+  daily_loss_limit: string;
+  halted: boolean;
+  open_orders: number;
+}
+
+export interface Position {
+  instrument_id: string;
+  qty: string;
+  avg_price: string;
+  mark: string | null;
+  market_value: string | null;
+  unrealized_pnl: string | null;
+  realized_pnl: string;
+}
+
+export type OrderType = "market" | "limit" | "stop" | "stop_limit" | "take_profit" | "trailing_stop";
+
+export interface OrderDraft {
+  instrument_id: string;
+  side: "buy" | "sell";
+  type: OrderType;
+  qty: string;
+  limit_price?: string;
+  stop_price?: string;
+  take_profit?: string;
+  trail_amount?: string;
+  trail_pct?: string;
+  tif?: "day" | "gtc" | "ioc";
+}
+
+export interface Order {
+  id: string;
+  instrument_id: string;
+  side: "buy" | "sell";
+  type: OrderType;
+  qty: string;
+  limit_price: string | null;
+  stop_price: string | null;
+  take_profit: string | null;
+  trail_amount: string | null;
+  trail_pct: string | null;
+  status: string;
+  reason: string;
+  filled_qty: string;
+  avg_fill_price: string | null;
+  trail_anchor: string | null;
+  triggered: boolean;
+  created_at: string;
+}
+
+export interface FillRow {
+  id: string;
+  order_id: string;
+  instrument_id: string;
+  side: "buy" | "sell";
+  qty: string;
+  price: string;
+  fee: string;
+  filled_at: string;
+}
+
+export interface Preview {
+  ok: boolean;
+  code: string | null;
+  message: string | null;
+  estimated_price: string | null;
+  notional: string | null;
+  fee: string | null;
+  total: string | null;
+  resulting_qty: string | null;
+  available_cash: string | null;
+  warnings: string[];
+}
+
+export interface RiskLimits {
+  daily_loss_eur: string;
+  max_position_pct: string;
+  max_orders_per_min: number;
+  pending: Record<string, string>;
+  pending_raise_at: string | null;
+  halted: boolean;
+}
+
+export interface Watchlist {
+  id: string;
+  name: string;
+  symbols: string[];
+}
+
+export interface SavedDrawing {
+  name: string;
+  points: { timestamp?: number; value?: number }[];
+}
+
 export class ApiFailure extends Error {
   constructor(
     readonly status: number,
@@ -84,7 +190,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     res = await fetch(`/api/v1${path}`, {
       credentials: "same-origin",
       ...init,
-      headers: init?.body ? { "content-type": "application/json" } : undefined,
+      headers: {
+        ...(init?.body ? { "content-type": "application/json" } : {}),
+        ...(init?.headers as Record<string, string> | undefined),
+      },
     });
   } catch {
     throw new ApiFailure(0, "NETWORK", "Can't reach the server. Check that the backend is running.");
@@ -103,8 +212,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-const post = (path: string, body?: unknown) =>
-  request<unknown>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+const send = <T = unknown>(method: string, path: string, body?: unknown, headers?: Record<string, string>) =>
+  request<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers });
+
+const post = (path: string, body?: unknown) => send("POST", path, body);
+const totpHeader = (code?: string): Record<string, string> | undefined => (code ? { "X-TOTP": code } : undefined);
 
 // Instrument ids keep their slash: the backend routes them as path parameters.
 const instrumentPath = (id: string) => `/instruments/${encodeURI(id)}`;
@@ -116,6 +228,7 @@ export const api = {
   confirmTotp: (username: string, password: string, code: string) =>
     post("/auth/totp/setup", { username, password, code }),
   logout: () => post("/auth/logout"),
+  saveSettings: (settings: Record<string, unknown>) => send<User>("PATCH", "/me/settings", { settings }),
   instruments: () => request<Instrument[]>("/instruments/search?q=kraken"),
   instrument: (id: string) => request<InstrumentDetail>(instrumentPath(id)),
   bars: async (id: string, interval: Interval, opts: { from?: Date; to?: Date; limit: number }) => {
@@ -125,4 +238,27 @@ export const api = {
     return (await request<{ bars: Candle[] }>(`${instrumentPath(id)}/bars?${query}`)).bars;
   },
   health: () => request<Health>("/admin/health"),
+
+  account: async () => (await request<Account[]>("/accounts"))[0],
+  positions: () => request<Position[]>("/positions"),
+  orders: (status?: string) => request<Order[]>(`/orders${status ? `?status=${status}` : ""}`),
+  fills: () => request<FillRow[]>("/fills"),
+  preview: (draft: OrderDraft) => send<Preview>("POST", "/orders/preview", draft),
+  placeOrder: (draft: OrderDraft, key: string) => send<Order>("POST", "/orders", draft, { "Idempotency-Key": key }),
+  cancelOrder: (id: string) => send<Order>("DELETE", `/orders/${id}`),
+  closePosition: (id: string) => send<Order>("POST", `/positions/${encodeURI(id)}/close`),
+  kill: (closePositions: boolean, code?: string) =>
+    send<{ cancelled: number; closed: number }>("POST", "/killswitch", { close_positions: closePositions }, totpHeader(code)),
+  release: (code: string) => send("DELETE", "/killswitch", undefined, totpHeader(code)),
+  riskLimits: () => request<RiskLimits>("/risk-limits"),
+  saveRiskLimits: (changes: Record<string, string | number>, code?: string) =>
+    send<RiskLimits>("PUT", "/risk-limits", changes, totpHeader(code)),
+  watchlists: () => request<Watchlist[]>("/watchlists"),
+  createWatchlist: (name: string) => send<Watchlist>("POST", "/watchlists", { name, symbols: [] }),
+  updateWatchlist: (id: string, patch: Partial<Pick<Watchlist, "name" | "symbols">>) =>
+    send<Watchlist>("PATCH", `/watchlists/${id}`, patch),
+  deleteWatchlist: (id: string) => send("DELETE", `/watchlists/${id}`),
+  drawings: async (id: string) =>
+    (await request<{ items: SavedDrawing[] }>(`/drawings/${encodeURI(id)}`)).items,
+  saveDrawings: (id: string, items: SavedDrawing[]) => send("PUT", `/drawings/${encodeURI(id)}`, { items }),
 };
