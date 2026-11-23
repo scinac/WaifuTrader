@@ -1,0 +1,36 @@
+# Phase 1 stack for the Raspberry Pi (arm64). Start: docker compose --env-file .env up -d
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: tt
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tt -d tt"]
+      interval: 5s
+      retries: 20
+
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TT_DATABASE_URL: postgresql+asyncpg://tt:${POSTGRES_PASSWORD}@db:5432/tt
+      TT_MASTER_KEY: ${TT_MASTER_KEY:?set TT_MASTER_KEY in .env}
+      TT_COOKIE_SECURE: ${TT_COOKIE_SECURE:-true}
+    # Bound to localhost: reach it through Tailscale (`tailscale serve`), never a public port.
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 30s
+      retries: 3
+
+volumes:
+  pgdata:
