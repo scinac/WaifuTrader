@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const backend = "http://127.0.0.1:8000";
+const backend = process.env.TT_BACKEND ?? "http://127.0.0.1:8000";
 
 // Proxying keeps the app same-origin, which the strict session cookie requires.
 export default defineConfig({
