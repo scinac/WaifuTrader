@@ -78,3 +78,66 @@ def test_account_equity_marks_positions_at_bid():
     sim.place_order(order("a", "buy", "0.01"))
     acct = sim.account()
     assert acct.equity == sim.cash + D("0.01") * D("50000")
+
+
+def advanced(coid, side, qty, type, **kw):
+    return OrderRequest(coid, IID, side, type, D(qty), **{k: D(v) for k, v in kw.items()})
+
+
+def funded_sim():
+    sim = PaperSimulator(D("10000"))
+    sim.on_quote(quote("50000", "50010"))
+    sim.place_order(order("entry", "buy", "0.1"))
+    return sim
+
+
+def test_stop_sell_fills_at_bid_when_triggered():
+    sim = funded_sim()
+    assert sim.place_order(advanced("s", "sell", "0.1", "stop", stop_price="49000")).status == "accepted"
+    assert sim.on_quote(quote("49100", "49110")) == []
+    [fill] = sim.on_quote(quote("48900", "48910"))
+    assert fill.status == "filled" and fill.fill_price == D("48900")
+
+
+def test_stop_limit_rests_as_limit_after_trigger():
+    sim = funded_sim()
+    sim.place_order(advanced("s", "sell", "0.1", "stop_limit", stop_price="49000", limit_price="49050"))
+    assert sim.on_quote(quote("48900", "48910")) == []
+    assert sim.open_orders["s"].triggered and "s" in sim.dirty
+    [fill] = sim.on_quote(quote("49060", "49070"))
+    assert fill.fill_price == D("49050")
+
+
+def test_take_profit_fills_at_market():
+    sim = funded_sim()
+    sim.place_order(advanced("t", "sell", "0.1", "take_profit", take_profit="51000"))
+    [fill] = sim.on_quote(quote("51010", "51020"))
+    assert fill.fill_price == D("51010")
+
+
+def test_trailing_stop_only_moves_up():
+    sim = funded_sim()
+    sim.place_order(advanced("t", "sell", "0.1", "trailing_stop", trail_amount="500"))
+    assert sim.on_quote(quote("51000", "51010")) == []
+    assert sim.open_orders["t"].anchor == D("51000")
+    assert sim.on_quote(quote("50600", "50610")) == []
+    assert sim.open_orders["t"].anchor == D("51000")
+    [fill] = sim.on_quote(quote("50500", "50510"))
+    assert fill.fill_price == D("50500")
+
+
+def test_trigger_already_crossed_is_rejected():
+    sim = funded_sim()
+    bad = sim.place_order(advanced("s", "sell", "0.1", "stop", stop_price="50500"))
+    assert bad.reason == "STOP_ALREADY_TRIGGERED"
+    bad = sim.place_order(advanced("t", "sell", "0.1", "take_profit", take_profit="49000"))
+    assert bad.reason == "TARGET_ALREADY_REACHED"
+
+
+def test_gapped_buy_stop_without_funds_is_rejected():
+    sim = PaperSimulator(D("1010"))
+    sim.on_quote(quote("50000", "50010"))
+    assert sim.place_order(advanced("s", "buy", "0.02", "stop", stop_price="50100")).status == "accepted"
+    [update] = sim.on_quote(quote("60000", "60010"))
+    assert update.status == "rejected" and update.reason == "INSUFFICIENT_FUNDS"
+    assert sim.cash == D("1010") and sim.positions == {}
