@@ -140,7 +140,12 @@ export function PriceChart({ instrumentId, interval, indicators, tool, onToolDon
 
   useEffect(() => {
     const element = host.current!;
-    const instance = init(element, { timezone: VIENNA, locale: "en-US", styles: chartStyles() });
+    const instance = init(element, {
+      timezone: VIENNA,
+      locale: "en-US",
+      styles: chartStyles(),
+      decimalFold: { threshold: Number.MAX_SAFE_INTEGER }, // show 0.0001, not 0.0{3}1
+    });
     if (!instance) return;
     chart.current = instance;
     instance.createIndicator({ name: "VOL", calcParams: [] });
