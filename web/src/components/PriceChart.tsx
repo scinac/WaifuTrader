@@ -20,9 +20,10 @@ function chartStyles() {
   const muted = token("muted");
   const text = token("text");
   const raised = token("raised");
-  const axis = { axisLine: { color: line }, tickLine: { color: line }, tickText: { color: muted, size: 11 } };
+  const family = token("font");
+  const axis = { axisLine: { color: line }, tickLine: { color: line }, tickText: { color: muted, size: 11, family } };
   const crosshairLine = { color: muted, size: 1, style: "dashed" as const, dashedValue: [3, 3] };
-  const crosshairText = { color: text, backgroundColor: raised, borderColor: line, size: 11 };
+  const crosshairText = { color: text, backgroundColor: raised, borderColor: line, size: 11, family };
 
   return {
     grid: {
@@ -36,19 +37,25 @@ function chartStyles() {
         upWickColor: up, downWickColor: down, noChangeWickColor: flat,
       },
       priceMark: {
-        high: { color: muted },
-        low: { color: muted },
+        high: { color: muted, textFamily: family },
+        low: { color: muted, textFamily: family },
         last: {
           upColor: up, downColor: down, noChangeColor: flat,
-          text: { color: token("ground") },
+          text: { color: token("ground"), family },
         },
       },
-      tooltip: { legend: { color: muted } },
+      tooltip: {
+        title: { show: false },
+        legend: { color: muted, size: 12, family },
+      },
     },
     indicator: {
-      bars: [{ upColor: `${up}66`, downColor: `${down}66`, noChangeColor: `${flat}66` }],
+      bars: [{ upColor: `${up}aa`, downColor: `${down}aa`, noChangeColor: `${flat}aa` }],
       lastValueMark: { show: false },
-      tooltip: { legend: { color: muted } },
+      tooltip: {
+        title: { color: muted, size: 12, family },
+        legend: { color: muted, size: 12, family },
+      },
     },
     xAxis: axis,
     yAxis: axis,
@@ -74,7 +81,7 @@ export function PriceChart({ instrumentId, interval }: { instrumentId: string; i
     const instance = init(element, { timezone: VIENNA, locale: "en-US", styles: chartStyles() });
     if (!instance) return;
     chart.current = instance;
-    instance.createIndicator("VOL");
+    instance.createIndicator({ name: "VOL", calcParams: [] });
 
     let loadToken = 0;
     let live: LiveBar | null = null;
@@ -152,12 +159,16 @@ export function PriceChart({ instrumentId, interval }: { instrumentId: string; i
   useEffect(() => {
     const instance = chart.current;
     if (!instance) return;
-    instance.setSymbol({
-      ticker: instrumentId,
-      pricePrecision: priceDecimals(instrumentId),
-      volumePrecision: 4,
-    });
-    instance.setPeriod(PERIODS[interval]);
+    // Each setter reloads the chart, so only call the one that changed.
+    const period = instance.getPeriod();
+    if (!period || intervalOf(period) !== interval) instance.setPeriod(PERIODS[interval]);
+    if (instance.getSymbol()?.ticker !== instrumentId) {
+      instance.setSymbol({
+        ticker: instrumentId,
+        pricePrecision: priceDecimals(instrumentId),
+        volumePrecision: 4,
+      });
+    }
   }, [instrumentId, interval]);
 
   // After a dropped connection, reload so missed candles appear.
