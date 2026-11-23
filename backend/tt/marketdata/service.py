@@ -57,6 +57,7 @@ class MarketDataService:
         self.bars_written = 0
         self.backfilled_bars = 0
         self._tasks: list[asyncio.Task] = []
+        self.quote_listeners: list = []  # async callables, e.g. the paper trading engine
 
     # --- lifecycle ----------------------------------------------------------
     async def start(self) -> None:
@@ -84,6 +85,8 @@ class MarketDataService:
             self._touch(event.instrument_id)
             self.last_quote[event.instrument_id] = event
             self.hub.publish(f"quotes:{event.instrument_id}", quote_json(event))
+            for listener in self.quote_listeners:
+                await listener(event)
         elif isinstance(event, Trade):
             b = self.builders.get(event.instrument_id)
             if b is None:

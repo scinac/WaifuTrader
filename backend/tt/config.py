@@ -1,4 +1,5 @@
 """Application settings, read from environment variables prefixed with TT_."""
+from decimal import Decimal
 from functools import lru_cache
 
 from pydantic import Field
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     stale_after_seconds_crypto: int = 10
     candle_publish_interval_ms: int = 250
     backfill_on_start_minutes: int = 720  # Kraken OHLC returns at most 720 bars
+
+    # Paper trading
+    paper_starting_cash: Decimal = Decimal("10000")
+    paper_fee_rate: Decimal = Decimal("0.004")
 
 
 @lru_cache
