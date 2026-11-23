@@ -92,7 +92,7 @@ export function RiskView({ account }: { account?: Account }) {
           <span className="num">{money(String(lossToday))} of {money(String(lossLimit))}</span>
         </div>
         <div className="meter" role="meter" aria-label="Daily loss used" aria-valuenow={Math.round(used)} aria-valuemin={0} aria-valuemax={100}>
-          <span style={{ width: `${used}%` }} className={used >= 80 ? "hot" : ""} />
+          <span style={{ transform: `scaleX(${used / 100})` }} className={used >= 80 ? "hot" : ""} />
         </div>
       </div>
       <form className="settings" onSubmit={submit}>
