@@ -1,4 +1,4 @@
-"""Phase 1 tables. Later phases add orders, fills, positions, bots, proposals,
+"""Tables for auth, market data and paper trading. Later phases add bots, proposals,
 models, predictions, tax_lots and notification_settings (see FSD data model)."""
 import uuid
 from datetime import datetime, timezone
@@ -13,6 +13,7 @@ from sqlalchemy import (
     Numeric,
     String,
     TypeDecorator,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -139,3 +140,95 @@ class AuditLog(Base):
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class PaperBalance(Base):
+    """Simulated cash for a paper account, plus the equity the current Vienna day started at."""
+
+    __tablename__ = "paper_balances"
+    account_id: Mapped[str] = mapped_column(ForeignKey("broker_accounts.id", ondelete="CASCADE"),
+                                            primary_key=True)
+    currency: Mapped[str] = mapped_column(String(8), default="EUR")
+    starting_cash: Mapped[Decimal] = mapped_column(Money)
+    cash: Mapped[Decimal] = mapped_column(Money)
+    day: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    day_start_equity: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+
+
+class RiskLimit(Base):
+    __tablename__ = "risk_limits"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    daily_loss_eur: Mapped[Decimal] = mapped_column(Money, default=Decimal("50"))
+    max_position_pct: Mapped[Decimal] = mapped_column(Money, default=Decimal("20"))
+    max_orders_per_min: Mapped[int] = mapped_column(Integer, default=10)
+    pending: Mapped[dict] = mapped_column(JSON, default=dict)  # raises waiting for the next day
+    pending_raise_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    halted: Mapped[bool] = mapped_column(Boolean, default=False)  # kill switch
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    __table_args__ = (UniqueConstraint("account_id", "client_order_id"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    client_order_id: Mapped[str] = mapped_column(String(64))
+    account_id: Mapped[str] = mapped_column(ForeignKey("broker_accounts.id", ondelete="CASCADE"), index=True)
+    instrument_id: Mapped[str] = mapped_column(ForeignKey("instruments.id"), index=True)
+    source: Mapped[str] = mapped_column(String(8), default="manual")
+    side: Mapped[str] = mapped_column(String(4))
+    type: Mapped[str] = mapped_column(String(16))
+    qty: Mapped[Decimal] = mapped_column(Money)
+    limit_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    stop_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    take_profit: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    trail_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    trail_pct: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    tif: Mapped[str] = mapped_column(String(4), default="gtc")
+    status: Mapped[str] = mapped_column(String(20), default="created", index=True)
+    reason: Mapped[str] = mapped_column(String(64), default="")
+    broker_order_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    filled_qty: Mapped[Decimal] = mapped_column(Money, default=Decimal(0))
+    avg_fill_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    triggered: Mapped[bool] = mapped_column(Boolean, default=False)
+    trail_anchor: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class Fill(Base):
+    __tablename__ = "fills"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    qty: Mapped[Decimal] = mapped_column(Money)
+    price: Mapped[Decimal] = mapped_column(Money)
+    fee: Mapped[Decimal] = mapped_column(Money)
+    fee_currency: Mapped[str] = mapped_column(String(8))
+    fx_rate_eur: Mapped[Decimal] = mapped_column(Money, default=Decimal(1))
+    filled_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class PositionRow(Base):
+    __tablename__ = "positions"
+    account_id: Mapped[str] = mapped_column(ForeignKey("broker_accounts.id", ondelete="CASCADE"),
+                                            primary_key=True)
+    instrument_id: Mapped[str] = mapped_column(ForeignKey("instruments.id"), primary_key=True)
+    qty: Mapped[Decimal] = mapped_column(Money, default=Decimal(0))
+    avg_price_eur: Mapped[Decimal] = mapped_column(Money, default=Decimal(0))
+    realized_pnl_eur: Mapped[Decimal] = mapped_column(Money, default=Decimal(0))
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class Watchlist(Base):
+    __tablename__ = "watchlists"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    symbols: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class Drawing(Base):
+    __tablename__ = "drawings"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    instrument_id: Mapped[str] = mapped_column(ForeignKey("instruments.id"), primary_key=True)
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
