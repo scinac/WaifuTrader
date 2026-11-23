@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, type Order } from "../lib/api";
 import { amount, dateTime, direction, money, price } from "../lib/format";
+import { useLive } from "../lib/live";
 
 type Tab = "positions" | "open" | "history" | "fills";
 
@@ -34,6 +35,7 @@ export function Blotter({ onSelect }: { onSelect?: (id: string) => void }) {
   const [tab, setTab] = useState<Tab>("positions");
   const [error, setError] = useState<string | null>(null);
   const positions = useQuery({ queryKey: ["positions"], queryFn: api.positions, refetchInterval: 3000 });
+  const liveQuotes = useLive((s) => s.quotes);
   const orders = useQuery({ queryKey: ["orders"], queryFn: () => api.orders() });
   const fills = useQuery({ queryKey: ["fills"], queryFn: api.fills, enabled: tab === "fills" });
 
@@ -68,18 +70,24 @@ export function Blotter({ onSelect }: { onSelect?: (id: string) => void }) {
             <table>
               <thead><tr><th>Symbol</th><th>Qty</th><th>Avg cost</th><th>Mark</th><th>Value</th><th>Unrealized</th><th>Realized</th><th /></tr></thead>
               <tbody>
-                {positions.data.map((p) => (
-                  <tr key={p.instrument_id}>
-                    {symbolCell(p.instrument_id)}
-                    <td>{amount(p.qty)}</td>
-                    <td>{price(p.instrument_id, p.avg_price)}</td>
-                    <td>{price(p.instrument_id, p.mark)}</td>
-                    <td>{money(p.market_value)}</td>
-                    <td className={direction(p.unrealized_pnl)}>{money(p.unrealized_pnl, true)}</td>
-                    <td className={direction(p.realized_pnl)}>{money(p.realized_pnl, true)}</td>
-                    <td><button className="button quiet" disabled={close.isPending} onClick={() => close.mutate(p.instrument_id)}>Close</button></td>
-                  </tr>
-                ))}
+                {positions.data.map((p) => {
+                  // Positions are marked at the live bid, the price a sale would get right now.
+                  const mark = liveQuotes[p.instrument_id]?.bid ?? p.mark;
+                  const value = mark == null ? null : (Number(p.qty) * Number(mark)).toFixed(10);
+                  const unrealized = mark == null ? null : (Number(p.qty) * (Number(mark) - Number(p.avg_price))).toFixed(10);
+                  return (
+                    <tr key={p.instrument_id}>
+                      {symbolCell(p.instrument_id)}
+                      <td>{amount(p.qty)}</td>
+                      <td>{price(p.instrument_id, p.avg_price)}</td>
+                      <td>{price(p.instrument_id, mark)}</td>
+                      <td>{money(value)}</td>
+                      <td className={direction(unrealized)}>{money(unrealized, true)}</td>
+                      <td className={direction(p.realized_pnl)}>{money(p.realized_pnl, true)}</td>
+                      <td><button className="button quiet" disabled={close.isPending} onClick={() => close.mutate(p.instrument_id)}>Close</button></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : <p className="empty">No open positions. Place a paper order from the ticket to start.</p>

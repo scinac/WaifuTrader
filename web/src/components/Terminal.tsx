@@ -1,12 +1,13 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type Instrument, type Interval, type Quote, type User } from "../lib/api";
+import { api, type Account, type Instrument, type Interval, type Quote, type User } from "../lib/api";
 import { INTERVALS } from "../lib/bars";
-import { clock, direction, money, percent, price, quantity } from "../lib/format";
+import { clock, direction, money, percent, price, priceDecimals, quantity } from "../lib/format";
 import { onOrder, startLive, useLive } from "../lib/live";
 import { Blotter } from "./Blotter";
 import { FeedHealth, StatusBadge } from "./FeedHealth";
 import { KillSwitch } from "./KillSwitch";
+import { LivePrice } from "./LivePrice";
 import { OrderTicket, type TicketHandle } from "./OrderTicket";
 import { PortfolioView, RiskView } from "./PortfolioView";
 import { DRAWING_TOOLS, INDICATORS, PriceChart } from "./PriceChart";
@@ -53,37 +54,22 @@ function useNow() {
   return now;
 }
 
-function LastPrice({ id, value, className }: { id: string; value: string | null | undefined; className: string }) {
-  const previous = useRef(value);
-  const tick = useRef<"up" | "down" | "">("");
-  if (value !== previous.current) {
-    if (value != null && previous.current != null) {
-      tick.current = Number(value) > Number(previous.current) ? "up" : "down";
-    }
-    previous.current = value;
-  }
-  return (
-    <span key={value ?? "none"} className={`${className} ${tick.current ? `tick-${tick.current}` : ""}`}>
-      {price(id, value)}
-    </span>
-  );
-}
-
 function QuoteHeader({ instrument, quote, status }: { instrument: Instrument; quote?: Quote; status: FeedStatus }) {
   const id = instrument.id;
   const spread = quote?.bid != null && quote.ask != null
-    ? (Number(quote.ask) - Number(quote.bid)).toFixed(Math.max(2, id.endsWith("XRP/EUR") ? 5 : 2))
+    ? (Number(quote.ask) - Number(quote.bid)).toFixed(priceDecimals(id))
     : null;
   return (
     <header className="quote">
       <div className="quote-main">
         <h1>{instrument.symbol}</h1>
-        <LastPrice id={id} value={quote?.last} className={`quote-last num ${status === "stale" ? "is-stale" : ""}`} />
-        <span className="quote-currency">{instrument.currency}</span>
+        <LivePrice id={id} quote={quote} className={`quote-last num ${status === "stale" ? "is-stale" : ""}`} />
+        <span className="quote-currency">{instrument.currency} mid</span>
         <span className={`quote-change num ${direction(quote?.change_pct_24h)}`}>{percent(quote?.change_pct_24h)}</span>
         <StatusBadge status={status} />
       </div>
       <dl className="quote-stats">
+        <div><dt>Last trade</dt><dd className="num">{price(id, quote?.last)}</dd></div>
         <div><dt>Bid</dt><dd className="num">{price(id, quote?.bid)}</dd></div>
         <div><dt>Ask</dt><dd className="num">{price(id, quote?.ask)}</dd></div>
         <div><dt>Spread</dt><dd className="num">{spread ?? "n/a"}</dd></div>
@@ -120,6 +106,7 @@ export function Terminal({ user, onSignedOut }: { user: User; onSignedOut: () =>
   const account = useQuery({ queryKey: ["account"], queryFn: api.account, refetchInterval: 3000 });
   const orders = useQuery({ queryKey: ["orders"], queryFn: () => api.orders() });
   const fills = useQuery({ queryKey: ["fills"], queryFn: api.fills });
+  const positions = useQuery({ queryKey: ["positions"], queryFn: api.positions, refetchInterval: 3000 });
   const lists = useWatchlists();
   const currentList = lists.data?.find((w) => w.id === activeList) ?? lists.data?.[0];
 
@@ -209,6 +196,23 @@ export function Terminal({ user, onSignedOut }: { user: User; onSignedOut: () =>
     saveIndicators.mutate(next);
   };
 
+  // Equity and P&L move with every quote; the server remains the source for cash and fills.
+  const liveAccount = useMemo<Account | undefined>(() => {
+    const base = account.data;
+    if (!base) return undefined;
+    let equity = Number(base.cash);
+    for (const p of positions.data ?? []) {
+      equity += Number(p.qty) * Number(liveQuotes[p.instrument_id]?.bid ?? p.mark ?? p.avg_price);
+    }
+    const dayStart = Number(base.equity) - Number(base.daily_pnl);
+    return {
+      ...base,
+      equity: equity.toFixed(10),
+      daily_pnl: (equity - dayStart).toFixed(10),
+      total_pnl: (equity - Number(base.starting_cash)).toFixed(10),
+    };
+  }, [account.data, positions.data, liveQuotes]);
+
   const halted = account.data?.halted ?? false;
 
   return (
@@ -222,8 +226,8 @@ export function Terminal({ user, onSignedOut }: { user: User; onSignedOut: () =>
         </nav>
         <span className="paper-tag">Paper</span>
         <span className="topbar-end">
-          <span className="topstat"><span>Equity</span> <b className="num">{money(account.data?.equity)}</b></span>
-          <span className="topstat"><span>Today</span> <b className={`num ${direction(account.data?.daily_pnl)}`}>{money(account.data?.daily_pnl, true)}</b></span>
+          <span className="topstat"><span>Equity</span> <b className="num">{money(liveAccount?.equity)}</b></span>
+          <span className="topstat"><span>Today</span> <b className={`num ${direction(liveAccount?.daily_pnl)}`}>{money(liveAccount?.daily_pnl, true)}</b></span>
           <time className="num topclock" title="Europe/Vienna">{clock(new Date(now))}</time>
           <KillSwitch halted={halted} />
           <span className="user">{user.username}</span>
@@ -247,9 +251,9 @@ export function Terminal({ user, onSignedOut }: { user: User; onSignedOut: () =>
           {!instrumentsQuery.isPending && <p className="dim">No instruments are being tracked.</p>}
         </main>
       ) : view === "portfolio" ? (
-        <PortfolioView account={account.data} onSelect={choose} />
+        <PortfolioView account={liveAccount} onSelect={choose} />
       ) : view === "risk" ? (
-        <RiskView account={account.data} />
+        <RiskView account={liveAccount} />
       ) : view === "feed" ? (
         <main className="page narrow"><FeedHealth user={user} instruments={instruments} statuses={statuses} now={now} /></main>
       ) : (
