@@ -52,6 +52,16 @@ def test_user_without_2fa_cannot_login(client, clock):
                                                "totp": "123456", "client": "cli"})
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "TOTP_SETUP_REQUIRED"
+    assert r.json()["error"]["details"]["totp_uri"].startswith("otpauth://")
+
+
+def test_wrong_password_never_reveals_the_2fa_key(client, clock):
+    bootstrap_admin(client, clock)
+    client.post("/api/v1/auth/register", json={"username": "erin", "password": "a long password 1"})
+    r = client.post("/api/v1/auth/login", json={"username": "erin", "password": "wrong password 12",
+                                               "totp": "123456", "client": "cli"})
+    assert r.status_code == 401
+    assert "totp_secret" not in r.json()["error"]["details"]
 
 
 def test_invite_single_use_and_weak_password(client, clock):
@@ -112,3 +122,42 @@ def test_secrets_encrypted_at_rest(client, clock):
     path = client.app.state.settings.database_url.split("///")[1]
     row = sqlite3.connect(path).execute("select totp_secret_enc from users").fetchone()
     assert admin["secret"] not in row[0]
+
+
+def test_first_admin_signs_up_from_the_web_then_bootstrap_closes(client, clock):
+    assert client.get("/api/v1/auth/bootstrap").json() == {"open": True}
+    r = client.post("/api/v1/auth/bootstrap", json={"username": "owner", "password": "a long password 1"})
+    assert r.status_code == 201, r.text
+    secret = r.json()["totp_secret"]
+    assert r.json()["totp_uri"].startswith("otpauth://")
+    r = client.post("/api/v1/auth/totp/setup", json={
+        "username": "owner", "password": "a long password 1", "code": code_for(secret, clock)})
+    assert r.status_code == 204
+    clock.advance()
+    token = login(client, clock, {"username": "owner", "password": "a long password 1", "secret": secret})
+    assert client.get("/api/v1/me", headers=auth(token)).json()["role"] == "admin"
+
+    assert client.get("/api/v1/auth/bootstrap").json() == {"open": False}
+    r = client.post("/api/v1/auth/bootstrap", json={"username": "intruder", "password": "a long password 2"})
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "BOOTSTRAP_CLOSED"
+
+
+def test_bootstrap_rejects_weak_password_and_stays_open(client):
+    r = client.post("/api/v1/auth/bootstrap", json={"username": "owner", "password": "short"})
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "WEAK_PASSWORD"
+    assert client.get("/api/v1/auth/bootstrap").json() == {"open": True}
+
+
+def test_sign_up_without_invite_creates_a_trader(client, clock):
+    bootstrap_admin(client, clock)
+    r = client.post("/api/v1/auth/register", json={"username": "dave", "password": "a long password 1"})
+    assert r.status_code == 201, r.text
+    secret = r.json()["totp_secret"]
+    r = client.post("/api/v1/auth/totp/setup", json={
+        "username": "dave", "password": "a long password 1", "code": code_for(secret, clock)})
+    assert r.status_code == 204
+    clock.advance()
+    token = login(client, clock, {"username": "dave", "password": "a long password 1", "secret": secret})
+    assert client.get("/api/v1/me", headers=auth(token)).json()["role"] == "trader"

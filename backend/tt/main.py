@@ -1,6 +1,7 @@
 """FastAPI application. Run: uvicorn tt.main:app"""
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -97,6 +98,7 @@ def create_app(settings: Settings | None = None,
     app.state.settings = settings
     app.state.vault = Vault(settings.master_key)
     app.state.hub = Hub()
+    app.state.bootstrap_lock = asyncio.Lock()  # one first-admin signup at a time
     install_error_handlers(app)
 
     api = APIRouter(prefix="/api/v1")

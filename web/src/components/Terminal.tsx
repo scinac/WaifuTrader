@@ -12,16 +12,18 @@ import { OrderTicket, type TicketHandle } from "./OrderTicket";
 import { PortfolioView, RiskView } from "./PortfolioView";
 import { DRAWING_TOOLS, INDICATORS, PriceChart } from "./PriceChart";
 import { SearchPalette } from "./SearchPalette";
+import { UsersView } from "./UsersView";
 import { useWatchlists, WatchlistRail } from "./WatchlistRail";
 
 export type FeedStatus = "live" | "stale" | "offline" | "waiting";
-type View = "trade" | "portfolio" | "risk" | "feed";
+type View = "trade" | "portfolio" | "risk" | "feed" | "users";
 
 const VIEWS: { id: View; label: string }[] = [
   { id: "trade", label: "Trade" },
   { id: "portfolio", label: "Portfolio" },
   { id: "risk", label: "Risk" },
   { id: "feed", label: "Feed" },
+  { id: "users", label: "Users" },
 ];
 
 const INTERVAL_LABEL: Record<Interval, string> = {
@@ -89,7 +91,7 @@ export function Terminal({ user, onSignedOut }: { user: User; onSignedOut: () =>
   const ids = useMemo(() => instruments.map((i) => i.id), [instruments]);
   const idsKey = ids.join(",");
 
-  const [view, setView] = useState<View>(() => remembered<View>("tt.view", "trade", ["trade", "portfolio", "risk", "feed"]));
+  const [view, setView] = useState<View>(() => remembered<View>("tt.view", "trade", user.role === "admin" ? ["trade", "portfolio", "risk", "feed", "users"] : ["trade", "portfolio", "risk", "feed"]));
   const [chosen, setChosen] = useState<string>(() => remembered<string>("tt.instrument", ""));
   const [interval, setIntervalChoice] = useState<Interval>(() => remembered<Interval>("tt.interval", "15m", INTERVALS));
   const [activeList, setActiveList] = useState<string | null>(() => remembered<string>("tt.watchlist", "") || null);
@@ -220,7 +222,7 @@ export function Terminal({ user, onSignedOut }: { user: User; onSignedOut: () =>
       <header className="topbar">
         <strong className="brand">Trading Terminal</strong>
         <nav className="views" aria-label="Main">
-          {VIEWS.map((v) => (
+          {VIEWS.filter((v) => v.id !== "users" || user.role === "admin").map((v) => (
             <button key={v.id} aria-current={view === v.id ? "page" : undefined} onClick={() => chooseView(v.id)}>{v.label}</button>
           ))}
         </nav>
@@ -254,6 +256,8 @@ export function Terminal({ user, onSignedOut }: { user: User; onSignedOut: () =>
         <PortfolioView account={liveAccount} onSelect={choose} />
       ) : view === "risk" ? (
         <RiskView account={liveAccount} />
+      ) : view === "users" && user.role === "admin" ? (
+        <UsersView user={user} />
       ) : view === "feed" ? (
         <main className="page narrow"><FeedHealth user={user} instruments={instruments} statuses={statuses} now={now} /></main>
       ) : (

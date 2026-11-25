@@ -5,6 +5,24 @@ export interface User {
   settings?: { indicators?: string[] } & Record<string, unknown>;
 }
 
+export type Role = "trader" | "admin";
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  role: Role;
+  totp_enabled: boolean;
+  disabled: boolean;
+  locked_until: string | null;
+  created_at: string;
+}
+
+export interface TotpSetup {
+  username: string;
+  totp_secret: string;
+  totp_uri: string;
+}
+
 export interface Instrument {
   id: string;
   broker: string;
@@ -227,6 +245,11 @@ export const api = {
     ((await post("/auth/login", { username, password, totp, client: "web" })) as { user: User }).user,
   confirmTotp: (username: string, password: string, code: string) =>
     post("/auth/totp/setup", { username, password, code }),
+  bootstrapOpen: async () => (await request<{ open: boolean }>("/auth/bootstrap")).open,
+  bootstrap: (username: string, password: string) =>
+    send<TotpSetup>("POST", "/auth/bootstrap", { username, password }),
+  register: (username: string, password: string) =>
+    send<TotpSetup>("POST", "/auth/register", { username, password }),
   logout: () => post("/auth/logout"),
   saveSettings: (settings: Record<string, unknown>) => send<User>("PATCH", "/me/settings", { settings }),
   instruments: () => request<Instrument[]>("/instruments/search?q=kraken"),
@@ -238,6 +261,9 @@ export const api = {
     return (await request<{ bars: Candle[] }>(`${instrumentPath(id)}/bars?${query}`)).bars;
   },
   health: () => request<Health>("/admin/health"),
+  users: () => request<AdminUser[]>("/admin/users"),
+  setRole: (id: string, role: Role, code: string) =>
+    send<AdminUser>("PATCH", `/admin/users/${id}`, { role }, totpHeader(code)),
 
   account: async () => (await request<Account[]>("/accounts"))[0],
   positions: () => request<Position[]>("/positions"),
