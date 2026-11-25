@@ -1,8 +1,18 @@
-# Trading Terminal
+<div align="center">
 
-Self-hosted trading terminal for a few users: stocks/ETFs via Interactive Brokers, crypto via
-Kraken, manual trading, bots and predictions. The full specification is the FSD:
-https://claude.ai/artifact/STBGAtAvkaLwmuTyTFszqY
+# ✨ Welcome to WaifuTrader ✨
+
+<img src="assets/reze-iris-out-dance-reze-dancing-chainsaw-man.gif" alt="Animated anime girl dancing" width="360">
+
+### 💸 *your cozy little self-hosted trading terminal* 💸
+
+📈 stocks & ETFs via Interactive Brokers &nbsp;·&nbsp; 🪙 crypto via Kraken &nbsp;·&nbsp; 🤖 bots & predictions
+
+<sub>🌸 made for a few friends · paper trading for now · full spec in the <a href="https://claude.ai/artifact/STBGAtAvkaLwmuTyTFszqY">FSD</a> 🌸</sub>
+
+</div>
+
+---
 
 ## Status: phase 2 in progress (paper trading)
 
